@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #loading {
+            display: none;
+            font-size: 18px;
+            color: #ff6600;
+        }
+        pre {
+            background: #eee;
+            padding: 10px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>YouTube Video/Audio Downloader</h1>
+    <form id="downloadForm">
+        <label for="url">Enter YouTube URL:</label><br />
+        <input type="text" id="url" name="url" required style="width: 300px" /><br /><br />
+
+        <label><input type="checkbox" id="audioOnly" /> Only download audio (MP3)</label><br /><br />
+
+        <label for="password">Password:</label><br />
+        <input type="password" id="password" name="password" required style="width: 300px" /><br /><br />
+
+        <button type="submit">Download</button>
+    </form>
+
+    <div id="loading">Downloading, please wait...</div>
+    <div id="result" style="margin-top: 20px;"></div>
+
+    <script>
+        document.getElementById('downloadForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            var url = document.getElementById('url').value;
+            var audioOnly = document.getElementById('audioOnly').checked;
+            var password = document.getElementById('password').value;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').innerHTML = '';
+
+            var formData = new FormData();
+            formData.append('url', url);
+            formData.append('audioOnly', audioOnly ? '1' : '0');
+            formData.append('password', password);
+
+            fetch('download.php', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('result').innerText = '启动任务失败: ' + (data.message || '');
+                    return;
+                }
+                var taskId = data.task_id;
+
+                var intervalId = setInterval(function () {
+                    fetch('download.php?task_id=' + encodeURIComponent(taskId) + '&password=' + encodeURIComponent(password))
+                    .then(res => res.json())
+                    .then(statusData => {
+                        if (!statusData.success) {
+                            clearInterval(intervalId);
+                            document.getElementById('loading').style.display = 'none';
+                            document.getElementById('result').innerText = '任务状态获取失败: ' + (statusData.message || '');
+                            return;
+                        }
+                        if (statusData.status === 'finished') {
+                            clearInterval(intervalId);
+                            document.getElementById('loading').style.display = 'none';
+                            document.getElementById('result').innerHTML = `
+                                下载完成!<br />
+                                <a href="${statusData.download_link}" target="_blank" rel="noopener noreferrer">点击下载</a>
+                            `;
+                        } else if (statusData.status === 'running') {
+                            document.getElementById('result').innerHTML = '下载中...<pre style="max-height:200px;overflow:auto;">' + (statusData.log || '') + '</pre>';
+                        } else if (statusData.status === 'failed') {
+                            clearInterval(intervalId);
+                            document.getElementById('loading').style.display = 'none';
+                            document.getElementById('result').innerHTML = '下载失败<br><pre>' + (statusData.log || '') + '</pre>';
+                        }
+                    })
+                    .catch(err => {
+                        clearInterval(intervalId);
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('result').innerText = '查询状态出错: ' + err;
+                    });
+                }, 3000);
+            })
+            .catch(err => {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('result').innerText = '启动任务请求错误: ' + err;
+            });
+        });
+    </script>
+</body>
+</html>
